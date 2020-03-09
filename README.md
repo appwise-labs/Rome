@@ -34,19 +34,18 @@ end
 ```ruby
 platform :ios, '8.0'
 
-plugin 'cocoapods-rome', { :pre_compile => Proc.new { |installer|
+plugin 'cocoapods-rome',
+  :pre_compile => Proc.new { |installer|
     installer.pods_project.targets.each do |target|
-        target.build_configurations.each do |config|
-            config.build_settings['SWIFT_VERSION'] = '4.0'
-        end
+      target.build_configurations.each do |config|
+        config.build_settings['SWIFT_VERSION'] = '4.0'
+      end
     end
 
     installer.pods_project.save
-},
-
-    dsym: false,
-    configuration: 'Release'
-}
+  },
+  :dsym => false,
+  :configuration => 'Release'
 
 target 'caesar' do
   pod 'Alamofire'
@@ -69,16 +68,16 @@ Rome/
 
 ## Advanced Usage
 
+### dSYMs
 
 For your production builds, when you want dSYMs created and stored:
 
 ```ruby
 platform :osx, '10.10'
 
-plugin 'cocoapods-rome', {
-  dsym: true,
-  configuration: 'Release'
-}
+plugin 'cocoapods-rome',
+  :dsym => true,
+  :configuration => 'Release'
 
 target 'caesar' do
   pod 'Alamofire'
@@ -104,6 +103,21 @@ dSYM/
             └── Resources
                 └── DWARF
                     └── Alamofire
+```
+
+### Fix Interface Builder integration
+
+If you use interface builder, you may want to set the `fix_interface_builder` flag. This will ensure swift files are marked as public headers, so that interface builder correctly shows `@IBInspectable`s & `@IBDesignable`s.
+
+```ruby
+platform :osx, '10.10'
+
+plugin 'cocoapods-rome',
+  :fix_interface_builder => true
+
+target 'caesar' do
+  pod 'Alamofire'
+end
 ```
 
 ## Hooks

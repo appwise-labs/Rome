@@ -95,9 +95,32 @@ def copy_dsym_files(dsym_destination, configuration)
   end
 end
 
+# To fix integration of interface builder with pre-compiled pods,
+# we need to add all swift files to the public headers
+def set_swift_files_as_public(installer)
+  Pod::UI.puts "Fixing interface builder integration"
+
+  installer.pods_project.targets.each do |target|
+    next unless target.respond_to?(:product_type)
+    next unless target.product_type == 'com.apple.product-type.framework'
+
+    target.source_build_phase.files_references.each do |file|
+      next unless File.extname(file.path) == '.swift'
+
+      buildFile = target.headers_build_phase.add_file_reference(file)
+      buildFile.settings = { 'ATTRIBUTES' => ['Public']}
+    end
+  end
+
+  installer.pods_project.save
+end
+
 Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_context, user_options|
   enable_dsym = user_options.fetch('dsym', true)
   configuration = user_options.fetch('configuration', 'Debug')
+  fix_interface_builder = user_options.fetch('fix_interface_builder', false)
+
+  set_swift_files_as_public(installer_context) if fix_interface_builder
   if user_options["pre_compile"]
     user_options["pre_compile"].call(installer_context)
   end
