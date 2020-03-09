@@ -1,7 +1,5 @@
 # cocoapods-rome
 
-![](yolo.jpg)
-
 Rome makes it easy to build a list of frameworks for consumption outside of
 Xcode, e.g. for a Swift script.
 

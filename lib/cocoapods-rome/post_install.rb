@@ -4,37 +4,67 @@ PLATFORMS = { 'iphonesimulator' => 'iOS',
               'appletvsimulator' => 'tvOS',
               'watchsimulator' => 'watchOS' }
 
-def build_for_iosish_platform(sandbox, build_dir, target, device, simulator, configuration)
+def build_for_iosish_platform(sandbox, build_dir, destination_dir, target, device, simulator, configuration, static=true)
   deployment_target = target.platform_deployment_target
   target_label = target.cocoapods_target_label
 
-  xcodebuild(sandbox, target_label, device, deployment_target, configuration)
-  xcodebuild(sandbox, target_label, simulator, deployment_target, configuration)
-
   spec_names = target.specs.map { |spec| [spec.root.name, spec.root.module_name] }.uniq
   spec_names.each do |root_name, module_name|
-    executable_path = "#{build_dir}/#{root_name}"
-    device_lib = "#{build_dir}/#{configuration}-#{device}/#{root_name}/#{module_name}.framework/#{module_name}"
-    device_framework_lib = File.dirname(device_lib)
-    simulator_lib = "#{build_dir}/#{configuration}-#{simulator}/#{root_name}/#{module_name}.framework/#{module_name}"
+    framework_name = "#{module_name}.framework"
 
-    next unless File.file?(device_lib) && File.file?(simulator_lib)
+    # skip if possible
+    next if skip_build?(build_dir, destination_dir, sandbox.project_path, root_name, module_name)
 
-    lipo_log = `lipo -create -output #{executable_path} #{device_lib} #{simulator_lib}`
-    puts lipo_log unless File.exist?(executable_path)
+    # build multiple archs
+    frameworks_path = []
+    frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, device, deployment_target, configuration)
+    frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, simulator, deployment_target, configuration)
 
-    FileUtils.mv executable_path, device_lib, :force => true
-    FileUtils.mv device_framework_lib, build_dir, :force => true
-    FileUtils.rm simulator_lib if File.file?(simulator_lib)
-    FileUtils.rm device_lib if File.file?(device_lib)
+    # lipo them together
+    lipo(build_dir, frameworks_path)
   end
 end
 
-def xcodebuild(sandbox, target, sdk='macosx', deployment_target=nil, configuration)
+def xcodebuild(sandbox, build_dir, target, module_name, sdk='macosx', deployment_target=nil, configuration)
   args = %W(-project #{sandbox.project_path.realdirpath} -scheme #{target} -configuration #{configuration} -sdk #{sdk})
   platform = PLATFORMS[sdk]
   args += Fourflusher::SimControl.new.destination(:oldest, platform, deployment_target) unless platform.nil?
+
+  Pod::UI.puts "Building '#{target}' for #{sdk}..."
   Pod::Executable.execute_command 'xcodebuild', args, true
+
+  return "#{build_dir}/#{configuration}-#{sdk}/#{target}/#{module_name}.framework"
+end
+
+def lipo(build_dir, frameworks_path)
+  module_name = File.basename(frameworks_path.first, '.framework')
+  libs = frameworks_path
+    .map { |f| "#{f}/#{module_name}" }
+    .select { |f| File.file?(f) }
+
+  return unless libs.count >= 2
+
+  fatlib = "#{build_dir}/#{module_name}"
+  args = %W(-create -output #{fatlib}) + libs
+  Pod::Executable.execute_command 'lipo', args, true
+
+  result_path = "#{build_dir}/#{File.basename(frameworks_path.first)}"
+  FileUtils.mv frameworks_path.first, result_path, :force => true
+  FileUtils.mv fatlib, "#{result_path}/#{module_name}", :force => true
+end
+
+def skip_build?(build_dir, destination_dir, project_path, target, module_name)
+  framework_name = "#{module_name}.framework"
+
+  File.directory?("#{build_dir}/#{framework_name}") ||
+    File.directory?("#{destination_dir}/#{framework_name}") ||
+    !native_target?(project_path, target)
+end
+
+def native_target?(project_path, target_name)
+  project = Xcodeproj::Project.open(project_path)
+  target = project.targets.find { |t| t.name == target_name }
+  return target.is_a?(Xcodeproj::Project::Object::PBXNativeTarget)
 end
 
 def enable_debug_information(project_path, configuration)
@@ -47,8 +77,13 @@ def enable_debug_information(project_path, configuration)
   project.save
 end
 
+def static?(project_path, configuration)
+  project = Xcodeproj::Project.open(project_path)
+  target = project.targets.find { |t| t.name =~ /^Pods/ }
+  return target.product_type == "com.apple.product-type.library.static"
+end
+
 def copy_dsym_files(dsym_destination, configuration)
-  dsym_destination.rmtree if dsym_destination.directory?
   platforms = ['iphoneos', 'iphonesimulator']
   platforms.each do |platform|
     dsym = Pathname.glob("build/#{configuration}-#{platform}/**/*.dSYM")
@@ -70,36 +105,33 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   sandbox_root = Pathname(installer_context.sandbox_root)
   sandbox = Pod::Sandbox.new(sandbox_root)
 
+  is_static = static?(sandbox.project_path, configuration)
   enable_debug_information(sandbox.project_path, configuration) if enable_dsym
 
   build_dir = sandbox_root.parent + 'build'
   destination = sandbox_root.parent + 'Rome'
 
-  Pod::UI.puts 'Building frameworks'
+  fw_type = is_static ? "static" : "dynamic"
+  Pod::UI.puts "Building #{fw_type} frameworks"
 
   build_dir.rmtree if build_dir.directory?
   targets = installer_context.umbrella_targets.select { |t| t.specs.any? }
   targets.each do |target|
     case target.platform_name
-    when :ios then build_for_iosish_platform(sandbox, build_dir, target, 'iphoneos', 'iphonesimulator', configuration)
+    when :ios then build_for_iosish_platform(sandbox, build_dir, destination, target, 'iphoneos', 'iphonesimulator', configuration, is_static)
     when :osx then xcodebuild(sandbox, target.cocoapods_target_label, configuration)
-    when :tvos then build_for_iosish_platform(sandbox, build_dir, target, 'appletvos', 'appletvsimulator', configuration)
-    when :watchos then build_for_iosish_platform(sandbox, build_dir, target, 'watchos', 'watchsimulator', configuration)
+    when :tvos then build_for_iosish_platform(sandbox, build_dir, destination, target, 'appletvos', 'appletvsimulator', configuration, is_static)
+    when :watchos then build_for_iosish_platform(sandbox, build_dir, destination, target, 'watchos', 'watchsimulator', configuration, is_static)
     else raise "Unknown platform '#{target.platform_name}'" end
   end
-
-  raise Pod::Informative, 'The build directory was not found in the expected location.' unless build_dir.directory?
 
   # Make sure the device target overwrites anything in the simulator build, otherwise iTunesConnect
   # can get upset about Info.plist containing references to the simulator SDK
   frameworks = Pathname.glob("build/*/*/*.framework").reject { |f| f.to_s =~ /Pods[^.]+\.framework/ }
   frameworks += Pathname.glob("build/*.framework").reject { |f| f.to_s =~ /Pods[^.]+\.framework/ }
-
   resources = []
 
   Pod::UI.puts "Built #{frameworks.count} #{'frameworks'.pluralize(frameworks.count)}"
-
-  destination.rmtree if destination.directory?
 
   installer_context.umbrella_targets.each do |umbrella|
     umbrella.specs.each do |spec|
