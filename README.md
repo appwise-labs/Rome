@@ -120,6 +120,21 @@ target 'caesar' do
 end
 ```
 
+### Bitcode generation
+
+You can set the `force_bitcode` option to `true` to ensure all dependencies are compiled with bitcode enabled.
+
+```ruby
+platform :osx, '10.10'
+
+plugin 'cocoapods-rome',
+  :force_bitcode => true
+
+target 'caesar' do
+  pod 'Alamofire'
+end
+```
+
 ## Hooks
 
 The plugin allows you to provides hooks that will be called during the installation process.

@@ -115,12 +115,27 @@ def set_swift_files_as_public(installer)
   installer.pods_project.save
 end
 
+# Force enable bitcode for projects
+def set_bitcode_generation(installer)
+  Pod::UI.puts "Enforcing bitcode generation"
+
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['BITCODE_GENERATION_MODE'] = 'bitcode'
+    end
+  end
+
+  installer.pods_project.save
+end
+
 Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_context, user_options|
   enable_dsym = user_options.fetch('dsym', true)
   configuration = user_options.fetch('configuration', 'Debug')
   fix_interface_builder = user_options.fetch('fix_interface_builder', false)
+  force_bitcode = user_options.fetch('force_bitcode', false)
 
   set_swift_files_as_public(installer_context) if fix_interface_builder
+  set_bitcode_generation(installer_context) if force_bitcode
   if user_options["pre_compile"]
     user_options["pre_compile"].call(installer_context)
   end
