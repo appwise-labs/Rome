@@ -128,6 +128,24 @@ def set_bitcode_generation(installer)
   installer.pods_project.save
 end
 
+# Cleanup but keep `all-product-headers.yaml` files (otherwise lldb/debug is broken)
+def cleanup(build_dir)
+  build_dir = Pathname(build_dir)
+  tmp_build_dir = Pathname('.temp-build')
+
+  # copy over files we need to keep
+  build_dir.glob("**/all-product-headers.yaml").each do |file|
+    intermediate = Pathname(file).relative_path_from(build_dir).dirname
+    destination_dir = tmp_build_dir + intermediate
+
+    FileUtils.mkdir_p(destination_dir)
+    FileUtils.mv(file, destination_dir)
+  end
+
+  build_dir.rmtree if build_dir.directory?
+  FileUtils.mv(tmp_build_dir, build_dir)
+end
+
 Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_context, user_options|
   enable_dsym = user_options.fetch('dsym', true)
   configuration = user_options.fetch('configuration', 'Debug')
@@ -152,7 +170,6 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   fw_type = is_static ? "static" : "dynamic"
   Pod::UI.puts "Building #{fw_type} frameworks"
 
-  build_dir.rmtree if build_dir.directory?
   targets = installer_context.umbrella_targets.select { |t| t.specs.any? }
   targets.each do |target|
     case target.platform_name
@@ -193,7 +210,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
 
   copy_dsym_files(sandbox_root.parent + 'dSYM', configuration) if enable_dsym
 
-  build_dir.rmtree if build_dir.directory?
+  cleanup(build_dir)
 
   if user_options["post_compile"]
     user_options["post_compile"].call(installer_context)
