@@ -134,16 +134,18 @@ def cleanup(build_dir)
   tmp_build_dir = Pathname('.temp-build')
 
   # copy over files we need to keep
-  build_dir.glob("**/all-product-headers.yaml").each do |file|
-    intermediate = Pathname(file).relative_path_from(build_dir).dirname
-    destination_dir = tmp_build_dir + intermediate
+  if File.directory?(build_dir)
+    build_dir.glob("**/all-product-headers.yaml").each do |file|
+      intermediate = Pathname(file).relative_path_from(build_dir).dirname
+      destination_dir = tmp_build_dir + intermediate
 
-    FileUtils.mkdir_p(destination_dir)
-    FileUtils.mv(file, destination_dir)
+      FileUtils.mkdir_p(destination_dir)
+      FileUtils.mv(file, destination_dir)
+    end
+
+    build_dir.rmtree if build_dir.directory?
+    FileUtils.mv(tmp_build_dir, build_dir)
   end
-
-  build_dir.rmtree if build_dir.directory?
-  FileUtils.mv(tmp_build_dir, build_dir)
 end
 
 Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_context, user_options|
