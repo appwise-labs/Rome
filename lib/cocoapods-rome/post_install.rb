@@ -148,12 +148,26 @@ def cleanup(build_dir)
   end
 end
 
+# Fixes Xcode 12 duplicate architectures (arm64 in simulator builds)
+def exclude_simulator_archs(installer)
+  Pod::UI.puts "Fixing Xcode 12 duplicate architectures"
+
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['EXCLUDED_ARCHS[sdk=*simulator*]'] = 'arm64 arm64e armv7 armv7s armv6 armv8'
+    end
+  end
+
+  installer.pods_project.save
+end
+
 Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_context, user_options|
   enable_dsym = user_options.fetch('dsym', true)
   configuration = user_options.fetch('configuration', 'Debug')
   fix_interface_builder = user_options.fetch('fix_interface_builder', false)
   force_bitcode = user_options.fetch('force_bitcode', false)
 
+  exclude_simulator_archs(installer_context) if %x(xcodebuild -version).include? 'Xcode 12'
   set_swift_files_as_public(installer_context) if fix_interface_builder
   set_bitcode_generation(installer_context) if force_bitcode
   if user_options["pre_compile"]
