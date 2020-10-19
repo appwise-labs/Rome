@@ -161,6 +161,38 @@ def exclude_simulator_archs(installer)
   installer.pods_project.save
 end
 
+def cache_frameworks(parent)
+  new_podfile_lock = parent + "Podfile.lock"
+  cached_podfile_lock = parent + "Rome" + "Podfile.lock"
+
+  if File.file?(new_podfile_lock)
+    Pod::UI.puts "Caching #{new_podfile_lock}"
+    FileUtils.copy_file(new_podfile_lock, cached_podfile_lock)
+  else
+    Pod::UI.puts "Deleting #{cached_podfile_lock}"
+    FileUtils.remove_file(cached_podfile_lock, true)
+  end
+end
+
+def nuke_frameworks(parent, frameworks)
+  Pod::UI.puts "Nuking frameworks (parent: #{parent}, frameworks: #{frameworks})"
+
+  build_dir = parent + "build"
+  rome_dir = parent + "Rome"
+  new_podfile_lock = parent + "Podfile.lock"
+  cached_podfile_lock = rome_dir + "Podfile.lock"
+
+  if File.file?(new_podfile_lock) and File.file?(cached_podfile_lock) and FileUtils.identical?(new_podfile_lock, cached_podfile_lock)
+    Pod::UI.puts "#{new_podfile_lock} matches #{cached_podfile_lock}"
+  else
+    Pod::UI.puts "#{new_podfile_lock} does not match #{cached_podfile_lock}"
+    Pod::UI.puts "Nuking #{build_dir}"
+    FileUtils.remove_dir(build_dir, true)
+    Pod::UI.puts "Nuking #{rome_dir}"
+    FileUtils.remove_dir(rome_dir, true)
+  end
+end
+
 Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_context, user_options|
   enable_dsym = user_options.fetch('dsym', true)
   configuration = user_options.fetch('configuration', 'Debug')
@@ -182,6 +214,8 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
 
   build_dir = sandbox_root.parent + 'build'
   destination = sandbox_root.parent + 'Rome'
+
+  nuke_frameworks(sandbox_root.parent, build_dir)
 
   fw_type = is_static ? "static" : "dynamic"
   Pod::UI.puts "Building #{fw_type} frameworks"
@@ -226,6 +260,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
 
   copy_dsym_files(sandbox_root.parent + 'dSYM', configuration) if enable_dsym
 
+  cache_frameworks(sandbox_root.parent)
   cleanup(build_dir)
 
   if user_options["post_compile"]
