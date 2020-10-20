@@ -162,8 +162,8 @@ def exclude_simulator_archs(installer)
 end
 
 def cache_frameworks(parent)
-  new_podfile_lock = parent + "Podfile.lock"
-  cached_podfile_lock = parent + "Rome" + "Podfile.lock"
+  new_podfile_lock = File.join(parent, "Podfile.lock")
+  cached_podfile_lock = File.join(parent, "Rome", "Podfile.lock")
 
   if File.file?(new_podfile_lock)
     Pod::UI.puts "Caching #{new_podfile_lock}"
@@ -177,10 +177,10 @@ end
 def nuke_frameworks(parent, frameworks)
   Pod::UI.puts "Nuking frameworks (parent: #{parent}, frameworks: #{frameworks})"
 
-  build_dir = parent + "build"
-  rome_dir = parent + "Rome"
-  new_podfile_lock = parent + "Podfile.lock"
-  cached_podfile_lock = rome_dir + "Podfile.lock"
+  build_dir = File.join(parent, "build")
+  rome_dir = File.join(parent, "Rome")
+  new_podfile_lock = File.join(parent, "Podfile.lock")
+  cached_podfile_lock = File.join(rome_dir, "Podfile.lock")
 
   if File.file?(new_podfile_lock) and File.file?(cached_podfile_lock) and FileUtils.identical?(new_podfile_lock, cached_podfile_lock)
     Pod::UI.puts "#{new_podfile_lock} matches #{cached_podfile_lock}"
