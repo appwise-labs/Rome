@@ -166,29 +166,25 @@ def cache_frameworks(parent)
   cached_podfile_lock = File.join(parent, "Rome", "Podfile.lock")
 
   if File.file?(new_podfile_lock)
-    Pod::UI.puts "Caching #{new_podfile_lock}"
+    Pod::UI.puts "Caching new Podfile.lock"
     FileUtils.copy_file(new_podfile_lock, cached_podfile_lock)
   else
-    Pod::UI.puts "Deleting #{cached_podfile_lock}"
+    Pod::UI.puts "Deleting cached Podfile.lock"
     FileUtils.remove_file(cached_podfile_lock, true)
   end
 end
 
 def nuke_frameworks(parent, frameworks)
-  Pod::UI.puts "Nuking frameworks (parent: #{parent}, frameworks: #{frameworks})"
-
   build_dir = File.join(parent, "build")
   rome_dir = File.join(parent, "Rome")
   new_podfile_lock = File.join(parent, "Podfile.lock")
   cached_podfile_lock = File.join(rome_dir, "Podfile.lock")
 
   if File.file?(new_podfile_lock) and File.file?(cached_podfile_lock) and FileUtils.identical?(new_podfile_lock, cached_podfile_lock)
-    Pod::UI.puts "#{new_podfile_lock} matches #{cached_podfile_lock}"
+    Pod::UI.puts "Podfile.lock did not change, not nuking frameworks"
   else
-    Pod::UI.puts "#{new_podfile_lock} does not match #{cached_podfile_lock}"
-    Pod::UI.puts "Nuking #{build_dir}"
+    Pod::UI.puts "Podfile.lock did change, nuking frameworks"
     FileUtils.remove_dir(build_dir, true)
-    Pod::UI.puts "Nuking #{rome_dir}"
     FileUtils.remove_dir(rome_dir, true)
   end
 end
