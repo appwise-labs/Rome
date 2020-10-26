@@ -163,7 +163,7 @@ end
 
 def cache_podslockfile(parent)
   new_podfile_lock = File.join(parent, "Podfile.lock")
-  cached_podfile_lock = File.join(parent, "Rome", "Podfile.lock")
+  cached_podfile_lock = File.join(parent, "Pods", "Rome-Podfile.lock")
 
   if File.file?(new_podfile_lock)
     Pod::UI.puts "Caching new Podfile.lock"
@@ -175,10 +175,11 @@ def cache_podslockfile(parent)
 end
 
 def nuke_frameworks_if_needed(parent)
+  new_podfile_lock = File.join(parent, "Podfile.lock")
+  cached_podfile_lock = File.join(parent, "Pods", "Rome-Podfile.lock")
+
   build_dir = File.join(parent, "build")
   rome_dir = File.join(parent, "Rome")
-  new_podfile_lock = File.join(parent, "Podfile.lock")
-  cached_podfile_lock = File.join(rome_dir, "Podfile.lock")
 
   if File.file?(new_podfile_lock) and File.file?(cached_podfile_lock) and FileUtils.identical?(new_podfile_lock, cached_podfile_lock)
     Pod::UI.puts "Podfile.lock did not change, not nuking frameworks"
