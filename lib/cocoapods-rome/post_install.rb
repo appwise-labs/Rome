@@ -161,7 +161,7 @@ def exclude_simulator_archs(installer)
   installer.pods_project.save
 end
 
-def cache_frameworks(parent)
+def cache_podslockfile(parent)
   new_podfile_lock = File.join(parent, "Podfile.lock")
   cached_podfile_lock = File.join(parent, "Rome", "Podfile.lock")
 
@@ -174,7 +174,7 @@ def cache_frameworks(parent)
   end
 end
 
-def nuke_frameworks(parent, frameworks)
+def nuke_frameworks_if_needed(parent, frameworks)
   build_dir = File.join(parent, "build")
   rome_dir = File.join(parent, "Rome")
   new_podfile_lock = File.join(parent, "Podfile.lock")
@@ -211,7 +211,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   build_dir = sandbox_root.parent + 'build'
   destination = sandbox_root.parent + 'Rome'
 
-  nuke_frameworks(sandbox_root.parent, build_dir)
+  nuke_frameworks_if_needed(sandbox_root.parent, build_dir)
 
   fw_type = is_static ? "static" : "dynamic"
   Pod::UI.puts "Building #{fw_type} frameworks"
@@ -256,7 +256,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
 
   copy_dsym_files(sandbox_root.parent + 'dSYM', configuration) if enable_dsym
 
-  cache_frameworks(sandbox_root.parent)
+  cache_podslockfile(sandbox_root.parent)
   cleanup(build_dir)
 
   if user_options["post_compile"]
