@@ -174,7 +174,7 @@ def cache_podslockfile(parent)
   end
 end
 
-def nuke_frameworks_if_needed(parent, frameworks)
+def nuke_frameworks_if_needed(parent)
   build_dir = File.join(parent, "build")
   rome_dir = File.join(parent, "Rome")
   new_podfile_lock = File.join(parent, "Podfile.lock")
@@ -211,7 +211,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   build_dir = sandbox_root.parent + 'build'
   destination = sandbox_root.parent + 'Rome'
 
-  nuke_frameworks_if_needed(sandbox_root.parent, build_dir)
+  nuke_frameworks_if_needed(sandbox_root.parent)
 
   fw_type = is_static ? "static" : "dynamic"
   Pod::UI.puts "Building #{fw_type} frameworks"
