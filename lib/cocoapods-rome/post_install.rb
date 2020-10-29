@@ -1,4 +1,5 @@
 require 'fourflusher'
+require 'yaml'
 
 PLATFORMS = { 'iphonesimulator' => 'iOS',
               'appletvsimulator' => 'tvOS',
@@ -174,19 +175,62 @@ def cache_podslockfile(parent)
   end
 end
 
-def nuke_frameworks_if_needed(parent)
-  new_podfile_lock = File.join(parent, "Podfile.lock")
-  cached_podfile_lock = File.join(parent, "Pods", "Rome-Podfile.lock")
-
-  build_dir = File.join(parent, "build")
-  rome_dir = File.join(parent, "Rome")
-
-  if File.file?(new_podfile_lock) and File.file?(cached_podfile_lock) and FileUtils.identical?(new_podfile_lock, cached_podfile_lock)
-    Pod::UI.puts "Podfile.lock did not change, not nuking frameworks"
-  else
-    Pod::UI.puts "Podfile.lock did change, nuking frameworks"
-    FileUtils.remove_dir(build_dir, true)
+def nuke_frameworks_if_needed(installer_context, parent)
+  podfile_lock = File.join(parent, 'Podfile.lock')
+  cached_podfile_lock = File.join(parent, 'Pods', 'Rome-Podfile.lock')
+  rome_dir = File.join(parent, 'Rome')
+  
+  # if first run (no cache), make sure we nuke partials
+  if !File.file?(cached_podfile_lock)
+    Pod::UI.puts "No cached lockfile, nuking frameworks".yellow
+    FileUtils.remove_dir(File.join(parent, 'build'), true)
+    FileUtils.remove_dir(File.join(parent, 'dSYM'), true)
     FileUtils.remove_dir(rome_dir, true)
+    return
+  end
+
+  # return early if identical
+  return unless File.file?(podfile_lock) and File.file?(cached_podfile_lock)
+  if FileUtils.identical?(podfile_lock, cached_podfile_lock)
+    Pod::UI.puts 'Podfile.lock did not change, leaving frameworks as is'
+    return
+  end
+
+  Pod::UI.puts 'Podfile.lock did change, deleting updated frameworks'.yellow
+  contents_old = YAML.load_file(cached_podfile_lock)
+  contents_new = YAML.load_file(podfile_lock)
+  spec_modules = installer_context.umbrella_targets.map { |t|
+    t.specs.map { |spec| [spec.root.name, spec.root.module_name] }
+  }.flatten(1).uniq.to_h
+
+  # collect changed specs (changed checksum, checkout or deleted pod)
+  changed = contents_new['SPEC CHECKSUMS'].select { |k,v| v != contents_old['SPEC CHECKSUMS'][k] }.keys.to_set
+  changed.merge(contents_new['CHECKOUT OPTIONS'].select { |k,v| v != contents_old['CHECKOUT OPTIONS'][k] }.keys)
+  changed.merge((contents_old['SPEC CHECKSUMS'].keys - contents_new['SPEC CHECKSUMS'].keys).to_set)
+
+  # collect affected frameworks (and filter out subspecs)
+  affected = changed
+  loop do
+    items = contents_new['PODS'].select { |s|
+      s.is_a?(Hash) && s.values.flatten.any? { |ss| affected.include? ss.split.first }
+    }.map { |s| s.keys.first.split.first }
+
+    break if affected.superset? (affected + items)
+    affected.merge(items)
+  end
+  affected = affected & contents_new['SPEC CHECKSUMS'].keys
+
+  # delete affected frameworks
+  Pod::UI.puts "Affected frameworks: #{affected.sort.join(', ')}"
+  affected.each do |pod|
+    name = spec_modules[pod] || pod.gsub(/^([0-9])/, '_\1').gsub(/[^a-zA-Z0-9_]/, '_')
+    path = "#{rome_dir}/#{name}.framework"
+    
+    if File.directory?(path)
+      FileUtils.remove_dir(path, true)
+    else
+      Pod::UI.puts "Error: could not delete #{path}, it does not exist!".red
+    end
   end
 end
 
@@ -212,7 +256,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   build_dir = sandbox_root.parent + 'build'
   destination = sandbox_root.parent + 'Rome'
 
-  nuke_frameworks_if_needed(sandbox_root.parent)
+  nuke_frameworks_if_needed(installer_context, sandbox_root.parent)
 
   fw_type = is_static ? "static" : "dynamic"
   Pod::UI.puts "Building #{fw_type} frameworks"
