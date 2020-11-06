@@ -204,21 +204,21 @@ def nuke_frameworks_if_needed(installer_context, parent)
   }.flatten(1).uniq.to_h
 
   # collect changed specs (changed checksum, checkout or deleted pod)
-  changed = contents_new['SPEC CHECKSUMS'].select { |k,v| v != contents_old['SPEC CHECKSUMS'][k] }.keys.to_set
-  changed.merge(contents_new['CHECKOUT OPTIONS'].select { |k,v| v != contents_old['CHECKOUT OPTIONS'][k] }.keys)
-  changed.merge((contents_old['SPEC CHECKSUMS'].keys - contents_new['SPEC CHECKSUMS'].keys).to_set)
+  changed = contents_new.fetch(['SPEC CHECKSUMS'], {}).select { |k,v| v != contents_old.fetch(['SPEC CHECKSUMS'], {})[k] }.keys.to_set
+  changed.merge(contents_new.fetch(['CHECKOUT OPTIONS'], {}).select { |k,v| v != contents_old.fetch(['CHECKOUT OPTIONS'], {})[k] }.keys)
+  changed.merge((contents_old.fetch(['SPEC CHECKSUMS'], {}).keys - contents_new.fetch(['SPEC CHECKSUMS'], {}).keys).to_set)
 
   # collect affected frameworks (and filter out subspecs)
   affected = changed
   loop do
-    items = contents_new['PODS'].select { |s|
+    items = contents_new.fetch(['PODS'], []).select { |s|
       s.is_a?(Hash) && s.values.flatten.any? { |ss| affected.include? ss.split.first }
     }.map { |s| s.keys.first.split.first }
 
     break if affected.superset? (affected + items)
     affected.merge(items)
   end
-  affected = affected & contents_new['SPEC CHECKSUMS'].keys
+  affected = affected & contents_new.fetch(['SPEC CHECKSUMS'], {}).keys
 
   # delete affected frameworks
   Pod::UI.puts "Affected frameworks: #{affected.sort.join(', ')}"
