@@ -50,8 +50,18 @@ def lipo(build_dir, frameworks_path)
   Pod::Executable.execute_command 'lipo', args, true
 
   result_path = "#{build_dir}/#{File.basename(frameworks_path.first)}"
-  FileUtils.mv frameworks_path.first, result_path, :force => true
+  FileUtils.mkdir_p result_path
+  frameworks_path.each do |f|
+    FileUtils.cp_r f, build_dir, :remove_destination => true
+  end
   FileUtils.mv fatlib, "#{result_path}/#{module_name}", :force => true
+  
+  # force device info.plist
+  device_path = frameworks_path.find { |p| p.include? 'iphoneos' }
+  if device_path
+    FileUtils.cp_r "#{device_path}/Info.plist", "#{result_path}/Info.plist", :remove_destination => true
+  end
+  
 end
 
 def skip_build?(build_dir, destination_dir, project_path, target, module_name)
@@ -273,8 +283,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
 
   # Make sure the device target overwrites anything in the simulator build, otherwise iTunesConnect
   # can get upset about Info.plist containing references to the simulator SDK
-  frameworks = Pathname.glob("build/*/*/*.framework").reject { |f| f.to_s =~ /Pods[^.]+\.framework/ }
-  frameworks += Pathname.glob("build/*.framework").reject { |f| f.to_s =~ /Pods[^.]+\.framework/ }
+  frameworks = Pathname.glob("build/*.framework").reject { |f| f.to_s =~ /Pods[^.]+\.framework/ }
   resources = []
 
   Pod::UI.puts "Built #{frameworks.count} #{'frameworks'.pluralize(frameworks.count)}"
