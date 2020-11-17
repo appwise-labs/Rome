@@ -51,17 +51,12 @@ def lipo(build_dir, frameworks_path)
 
   result_path = "#{build_dir}/#{File.basename(frameworks_path.first)}"
   FileUtils.mkdir_p result_path
-  frameworks_path.each do |f|
+  
+  # Copy phoneOS version last (to avoid iTC issues)
+  frameworks_path.sort_by { |p| p.include?('iphoneos') ? 1 : 0 }.each do |f|
     FileUtils.cp_r f, build_dir, :remove_destination => true
   end
   FileUtils.mv fatlib, "#{result_path}/#{module_name}", :force => true
-  
-  # force device info.plist
-  device_path = frameworks_path.find { |p| p.include? 'iphoneos' }
-  if device_path
-    FileUtils.cp_r "#{device_path}/Info.plist", "#{result_path}/Info.plist", :remove_destination => true
-  end
-  
 end
 
 def skip_build?(build_dir, destination_dir, project_path, target, module_name)
