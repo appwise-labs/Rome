@@ -5,29 +5,28 @@ PLATFORMS = { 'iphonesimulator' => 'iOS',
               'appletvsimulator' => 'tvOS',
               'watchsimulator' => 'watchOS' }
 
-def build_for_iosish_platform(sandbox, build_dir, destination_dir, target, device, simulator, configuration, static=true)
+def build_for_platform(sandbox, build_dir, destination_dir, target, configuration, device, simulator=nil, flags=nil, static=true)
   deployment_target = target.platform_deployment_target
   target_label = target.cocoapods_target_label
 
   spec_names = target.specs.map { |spec| [spec.root.name, spec.root.module_name] }.uniq
   spec_names.each do |root_name, module_name|
-    framework_name = "#{module_name}.framework"
-
     # skip if possible
     next if skip_build?(build_dir, destination_dir, sandbox.project_path, root_name, module_name)
 
     # build multiple archs
     frameworks_path = []
-    frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, device, deployment_target, configuration)
-    frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, simulator, deployment_target, configuration)
+    frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, device, deployment_target, flags, configuration)
+    frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, simulator, deployment_target, flags, configuration) if simulator
 
     # lipo them together
     lipo(build_dir, frameworks_path)
   end
 end
 
-def xcodebuild(sandbox, build_dir, target, module_name, sdk='macosx', deployment_target=nil, configuration)
+def xcodebuild(sandbox, build_dir, target, module_name, sdk='macosx', deployment_target=nil, flags=nil, configuration)
   args = %W(-project #{sandbox.project_path.realdirpath} -scheme #{target} -configuration #{configuration} -sdk #{sdk})
+  args += flags unless flags.nil? 
   platform = PLATFORMS[sdk]
   args += Fourflusher::SimControl.new.destination(:oldest, platform, deployment_target) unless platform.nil?
 
@@ -245,6 +244,10 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   fix_interface_builder = user_options.fetch('fix_interface_builder', false)
   force_bitcode = user_options.fetch('force_bitcode', false)
 
+  flags = []
+  # Use custom flags passed via user options, if any
+  flags += user_options["flags"] if user_options["flags"]
+
   exclude_simulator_archs(installer_context) if %x(xcodebuild -version).include? 'Xcode 12'
   set_swift_files_as_public(installer_context) if fix_interface_builder
   set_bitcode_generation(installer_context) if force_bitcode
@@ -269,10 +272,10 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   targets = installer_context.umbrella_targets.select { |t| t.specs.any? }
   targets.each do |target|
     case target.platform_name
-    when :ios then build_for_iosish_platform(sandbox, build_dir, destination, target, 'iphoneos', 'iphonesimulator', configuration, is_static)
-    when :osx then xcodebuild(sandbox, target.cocoapods_target_label, configuration)
-    when :tvos then build_for_iosish_platform(sandbox, build_dir, destination, target, 'appletvos', 'appletvsimulator', configuration, is_static)
-    when :watchos then build_for_iosish_platform(sandbox, build_dir, destination, target, 'watchos', 'watchsimulator', configuration, is_static)
+    when :ios then build_for_platform(sandbox, build_dir, destination, target, configuration, 'iphoneos', 'iphonesimulator', flags, is_static)
+    when :osx then build_for_platform(sandbox, build_dir, destination, target, configuration, 'macosx', flags, is_static)
+    when :tvos then build_for_platform(sandbox, build_dir, destination, target, configuration, 'appletvos', 'appletvsimulator', flags, is_static)
+    when :watchos then build_for_platform(sandbox, build_dir, destination, target, configuration, 'watchos', 'watchsimulator', flags, is_static)
     else raise "Unknown platform '#{target.platform_name}'" end
   end
 
