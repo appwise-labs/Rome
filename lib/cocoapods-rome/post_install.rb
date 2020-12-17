@@ -19,8 +19,8 @@ def build_for_platform(sandbox, build_dir, destination_dir, target, configuratio
     frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, device, deployment_target, flags, configuration)
     frameworks_path << xcodebuild(sandbox, build_dir, root_name, module_name, simulator, deployment_target, flags, configuration) if simulator
 
-    # lipo them together
-    lipo(build_dir, frameworks_path)
+    # convert to xcframework
+    build_xcframework(frameworks_path, build_dir, module_name)
   end
 end
 
@@ -36,30 +36,18 @@ def xcodebuild(sandbox, build_dir, target, module_name, sdk='macosx', deployment
   return "#{build_dir}/#{configuration}-#{sdk}/#{target}/#{module_name}.framework"
 end
 
-def lipo(build_dir, frameworks_path)
-  module_name = File.basename(frameworks_path.first, '.framework')
-  libs = frameworks_path
-    .map { |f| "#{f}/#{module_name}" }
-    .select { |f| File.file?(f) }
+def build_xcframework(frameworks, destination, module_name)
+  args = %W(-create-xcframework -output #{destination}/#{module_name}.xcframework)
 
-  return unless libs.count >= 2
-
-  fatlib = "#{build_dir}/#{module_name}"
-  args = %W(-create -output #{fatlib}) + libs
-  Pod::Executable.execute_command 'lipo', args, true
-
-  result_path = "#{build_dir}/#{File.basename(frameworks_path.first)}"
-  FileUtils.mkdir_p result_path
-  
-  # Copy phoneOS version last (to avoid iTC issues)
-  frameworks_path.sort_by { |p| p.include?('iphoneos') ? 1 : 0 }.each do |f|
-    FileUtils.cp_r f, build_dir, :remove_destination => true
+  frameworks.each do |framework|
+    args += %W(-framework #{framework})
   end
-  FileUtils.mv fatlib, "#{result_path}/#{module_name}", :force => true
+
+  Pod::Executable.execute_command 'xcodebuild', args, true
 end
 
 def skip_build?(build_dir, destination_dir, project_path, target, module_name)
-  framework_name = "#{module_name}.framework"
+  framework_name = "#{module_name}.xcframework"
 
   File.directory?("#{build_dir}/#{framework_name}") ||
     File.directory?("#{destination_dir}/#{framework_name}") ||
@@ -228,7 +216,7 @@ def nuke_frameworks_if_needed(installer_context, parent)
   Pod::UI.puts "Affected frameworks: #{affected.sort.join(', ')}"
   affected.each do |pod|
     name = spec_modules[pod] || pod.gsub(/^([0-9])/, '_\1').gsub(/[^a-zA-Z0-9_]/, '_')
-    path = "#{rome_dir}/#{name}.framework"
+    path = "#{rome_dir}/#{name}.xcframework"
     
     if File.directory?(path)
       FileUtils.remove_dir(path, true)
@@ -244,9 +232,18 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
   fix_interface_builder = user_options.fetch('fix_interface_builder', false)
   force_bitcode = user_options.fetch('force_bitcode', false)
 
-  flags = []
+  # Setting SKIP_INSTALL=NO to access the built frameworks inside the archive created
+  # instead of searching in Xcode’s default derived data folder
+  flags = ["SKIP_INSTALL=NO" "BUILD_LIBRARY_FOR_DISTRIBUTION=YES"]
   # Use custom flags passed via user options, if any
   flags += user_options["flags"] if user_options["flags"]
+
+  installer_context.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
+    end
+  end
+  installer_context.pods_project.save
 
   exclude_simulator_archs(installer_context) if %x(xcodebuild -version).include? 'Xcode 12'
   set_swift_files_as_public(installer_context) if fix_interface_builder
@@ -281,7 +278,7 @@ Pod::HooksManager.register('cocoapods-rome', :post_install) do |installer_contex
 
   # Make sure the device target overwrites anything in the simulator build, otherwise iTunesConnect
   # can get upset about Info.plist containing references to the simulator SDK
-  frameworks = Pathname.glob("build/*.framework").reject { |f| f.to_s =~ /Pods[^.]+\.framework/ }
+  frameworks = Pathname.glob("build/*.xcframework").reject { |f| f.to_s =~ /Pods[^.]+\.xcframework/ }
   resources = []
 
   Pod::UI.puts "Built #{frameworks.count} #{'frameworks'.pluralize(frameworks.count)}"
